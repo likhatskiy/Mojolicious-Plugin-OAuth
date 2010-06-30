@@ -45,6 +45,9 @@ HELPERS
 	- oauth_url('provider')
 		Generate url for authorization via oauth profider, where 'provider' is key of -config HASH.
 	
+	- oauth_providers
+		Returns available providers from keys of -config HASH param.
+	
 DEBUG
 	
 	For switching to debug mode set $ENV{OAUTH_DEBUG} to true.

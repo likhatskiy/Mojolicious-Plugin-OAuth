@@ -19,7 +19,8 @@ sub register {
 	$self->{'error_path'    } = $args->{'error_path'};
 	$self->{'after_callback'} = $args->{'after_callback'} || sub {$_[1]->redirect_to('/')};
 	
-	$base->renderer->add_helper('oauth_url', sub { $_[1] ? OAUTH_SESSION_URL.$_[1].'/' : '/' });
+	$base->renderer->add_helper('oauth_url',       sub { $_[1] ? OAUTH_SESSION_URL.$_[1].'/' : '/' });
+	$base->renderer->add_helper('oauth_providers', sub { keys %{ $self->{'__CONFIG'} || {} } });
 	
 	for ($base->routes) {
 		$_->route(OAUTH_SESSION_URL.":oauth_provider", oauth_provider => qr/[\w\-]+/)

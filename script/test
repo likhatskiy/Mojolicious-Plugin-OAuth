@@ -24,10 +24,10 @@ __DATA__
 
 @@ index.html.ep
 % layout 'funky';
-<a href="<%= oauth_url 'twitter' %>">Twitter</a><br/>
-<a href="<%= oauth_url 'google' %>">Google</a><br/>
-<a href="<%= oauth_url 'friendfeed' %>">FriendFeed</a><br/>
-<a href="<%= oauth_url 'facebook' %>">Facebook</a><br/>
+
+<% for (oauth_providers) { %>
+	<a href="<%= oauth_url $_ %>"><%= ucfirst $_ %></a><br/>
+<% } %>
 
 @@ oauth_error.html.ep
 % layout 'funky';
