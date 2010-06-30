@@ -1,0 +1,40 @@
+#!/usr/bin/env perl
+
+use lib qw(lib /home/webmaster/plib);
+use Mojolicious::Lite;
+use Data::Dumper;
+
+plugin 'o_auth', {
+	'config'         => do 'script/app.conf',
+	'error_path'     => '/oauth_error/',
+	'after_callback' => sub {
+		my ($plugin, $ctrl, $data) = @_;
+		
+		warn Dumper $data;
+		$ctrl->redirect_to('/');
+	},
+};
+
+get '/' => 'index';
+get '/oauth_error' => 'oauth_error';
+
+app->start;
+
+__DATA__
+
+@@ index.html.ep
+% layout 'funky';
+<a href="<%= oauth_url 'twitter' %>">Twitter</a><br/>
+<a href="<%= oauth_url 'google' %>">Google</a><br/>
+<a href="<%= oauth_url 'friendfeed' %>">FriendFeed</a><br/>
+<a href="<%= oauth_url 'facebook' %>">Facebook</a><br/>
+
+@@ oauth_error.html.ep
+% layout 'funky';
+Can`t login
+
+@@ layouts/funky.html.ep
+<!doctype html><html>
+    <head><title>Funky!</title></head>
+    <body><%== content %></body>
+</html>

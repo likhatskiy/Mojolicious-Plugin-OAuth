@@ -7,25 +7,30 @@ use base 'Mojolicious::Plugin';
 use Net::OAuth::All;
 use Data::Dumper;
 
-use constant DEBUG => $ENV{'OAUTH_DEBUG'} || 0;
+use constant DEBUG             => $ENV{'OAUTH_DEBUG'} || 0;
+use constant OAUTH_SESSION_URL => '/oauth_session/';
 
 sub register {
 	my ($self, $base, $args)  = @_;
+	
+	DEBUG && $base->log->debug("OAUTH SESSION URL is ".OAUTH_SESSION_URL.":oauth_provider/");
 	
 	$self->{'__CONFIG'      } = $args->{'config'} || ($base->log->error("Config is empty. Insert it with 'config' param!") and return);
 	$self->{'error_path'    } = $args->{'error_path'};
 	$self->{'after_callback'} = $args->{'after_callback'} || sub {$_[1]->redirect_to('/')};
 	
+	$base->renderer->add_helper('oauth_url', sub { $_[1] ? OAUTH_SESSION_URL.$_[1].'/' : '/' });
+	
 	for ($base->routes) {
-		$_->route("/oauth_session/:oauth_provider", oauth_provider => qr/[\w\-]+/)
-			->to(callback => sub {
+		$_->route(OAUTH_SESSION_URL.":oauth_provider", oauth_provider => qr/[\w\-]+/)
+			->to(cb => sub {
 				my $ctrl = shift;
 				my $res = eval { $self->oauth_session($ctrl) };
 				return $@ ? $self->_oauth_error($ctrl, $@) : $res;
 			});
 		
-		$_->route("/oauth/:oauth_provider", oauth_provider => qr/[\w\-]+/i)
-			->to(callback => sub {
+		$_->route("/oauth/:oauth_provider", oauth_provider => qr/[\w\-]+/)
+			->to(cb => sub {
 				my $ctrl = shift;
 				my $res = eval { $self->oauth_callback($ctrl) };
 				return $@ ? $self->_oauth_error($ctrl, $@) : $res;
@@ -88,9 +93,6 @@ sub oauth_callback {
 			'verifier'     => $ctrl->param('oauth_verifier') || '',
 		)
 	);
-	
-	warn Dumper $www_oauth;
-	#~ $ctrl->cookie($_ => '', {'path' => '/'}) for qw/request_token request_token_secret access_token refresh_token access_token_expires access_token_secret/;
 	
 	if (my $res = $self->oauth_request($ctrl, $www_oauth->request('access_token'))) {
 		$www_oauth->response->from_post_body($res->body);
