@@ -1,18 +1,63 @@
 NAME
 
-Mojolicious::Plugin::OAuth - Plugin with OAuth support for Mojo and Mojolicious.
-
-Uses Net::OAuth::All.
+	Mojolicious::Plugin::OAuth - Plugin with OAuth support for Mojo and Mojolicious.
+	
+	Uses Net::OAuth::All.
 
 SYNOPSIS
+	
+	my $config = {
+		provider1 => {
+			# provider1 config params
+		},
+		provider2 => {
+			# provider2 config params
+		},
+	};
+	
+	# Mojolicious
+	$self->plugin('o_auth', {
+		'config' => $config,
+	});
+	
+	# Mojolicious::Lite
+	plugin 'o_auth', {
+		'config' => $config,
+	};
+	
+	
+DESCRIPTION
 
+	Mojolicious::Plugin::OAuth is a plugin to easily enable OAuth authorization.
 
+PLUGIN CONFIGURE
+	
+	- config 
+		Is required HASH param. May consists of many provider configuration. For provider configuration see Net::OAuth::All.
+	- error_path
+		Is optional param. Redirects to error_path on error. Default value is '/'.
+	- after_callback
+		Is optional param. Is a callback, which will be called, where authorization is successful. Callback receives three params: $plugin, $controller, $protected_data. UNDEF after_callback redirects to '/' by default.
+
+HELPERS
+	- oauth_url('provider')
+		Generate url for authorization via oauth profider, where 'provider' is key of -config HASH.
+	
+DEBUG
+	
+	For switching to debug mode set $ENV{OAUTH_DEBUG} to true.
+
+SEE ALSO
+	http://oauth.net
+	
+	For more information about oauth provider configuration see Net::OAuth::All on http://github.com/likhatskiy/Net-OAuth-All
+	
 LICENSE AND COPYRIGHT
 
-Copyright (C) 2010 Alexey Likhatskiy
+	Copyright (C) 2010 Alexey Likhatskiy
 
-This program is free software; you can redistribute it and/or modify it
-under the terms of either: the GNU General Public License as published
-by the Free Software Foundation; or the Artistic License.
+	This program is free software; you can redistribute it and/or modify it
+	under the terms of either: the GNU General Public License as published
+	by the Free Software Foundation; or the Artistic License.
 
-See http://dev.perl.org/licenses/ for more information.
+	See http://dev.perl.org/licenses/ for more information.
