@@ -34,8 +34,10 @@ PLUGIN CONFIGURE
 	
 	- config 
 		Is required HASH param. May consists of many provider configuration. For provider configuration see Net::OAuth::All.
+	
 	- error_path
 		Is optional param. Redirects to error_path on error. Default value is '/'.
+	
 	- after_callback
 		Is optional param. Is a callback, which will be called, where authorization is successful. Callback receives three params: $plugin, $controller, $protected_data. UNDEF after_callback redirects to '/' by default.
 
