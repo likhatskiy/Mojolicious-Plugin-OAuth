@@ -11,7 +11,7 @@ plugin 'o_auth', {
 		my ($plugin, $ctrl, $data) = @_;
 		
 		warn Dumper $data;
-		$ctrl->redirect_to('/');
+		$ctrl->redirect_to($ctrl->session('login_referrer') || '');
 	},
 };
 

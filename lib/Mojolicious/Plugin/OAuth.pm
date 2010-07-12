@@ -52,8 +52,21 @@ sub oauth_session {
 	my ($self, $ctrl) = @_;
 	
 	DEBUG && $self->_debug($ctrl, "start oauth session");
+	
 	my $conf = $self->conf->{ my $oauth_provider = $ctrl->param('oauth_provider') };
 	return $self->_oauth_error($ctrl, "Can`t get config!") unless %$conf;
+	
+	if ($ctrl->req->headers->referrer) {
+		my $ref = Mojo::URL->new($ctrl->req->headers->referrer || '');
+		if ($ref->host eq $ctrl->req->url->base->host) {
+			DEBUG && $self->_debug($ctrl, "save login referrer ".$ref->to_string);
+			$ctrl->session('login_referrer' => $ref->to_string);
+		} else {
+			delete $ctrl->session->{'login_referrer'};
+		}
+	} else {
+		delete $ctrl->session->{'login_referrer'};
+	}
 	
 	my $www_oauth = Net::OAuth::All->new(%$conf);
 	
