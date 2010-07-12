@@ -48,9 +48,10 @@ HELPERS
 	- oauth_providers
 		Returns available providers from keys of -config HASH param.
 	
-DEBUG
+ROUTES
 	
-	For switching to debug mode set $ENV{OAUTH_DEBUG} to true.
+	Plugin creates some routes by default. Route '/oauth_session/:oauth_provider/' is for initialization OAUTH session, where 'oauth_provider' is key of -config HASH. It`s link on your web project for authorization.
+	Route '/oauth/:oauth_provider/' is a callback URL which was installed at OAUTH provider, where 'oauth_provider' is key of -config HASH. You can redefine callback URL of OAUTH provider by setting 'callback' param of provider configuration. But not all providers support this param.
 
 SEE ALSO
 	http://oauth.net

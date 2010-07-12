@@ -4,33 +4,42 @@ use strict;
 use warnings;
 
 use base 'Mojolicious::Plugin';
+
+our $VERSION = '0.04';
+
 use Net::OAuth::All;
 use Data::Dumper;
 
-use constant DEBUG             => $ENV{'OAUTH_DEBUG'} || 0;
-use constant OAUTH_SESSION_URL => '/oauth_session/';
+use constant DEBUG => $ENV{'OAUTH_DEBUG'} || 0;
+
+__PACKAGE__->attr('conf',              sub { {} });
+__PACKAGE__->attr('error_path',        sub { '' });
+__PACKAGE__->attr('callback_url',      sub { '/oauth/'         });
+__PACKAGE__->attr('oauth_session_url', sub { '/oauth_session/' });
+__PACKAGE__->attr('after_callback',    sub { sub {$_[1]->redirect_to('/')} });
 
 sub register {
 	my ($self, $base, $args)  = @_;
 	
-	DEBUG && $base->log->debug("OAUTH SESSION URL is ".OAUTH_SESSION_URL.":oauth_provider/");
+	$base->log->error("Config is empty. Insert it with 'config' param!") and return unless $args->{'config'};
+	DEBUG && $base->log->debug("OAUTH SESSION URL is ".$self->oauth_session_url.":oauth_provider/");
 	
-	$self->{'__CONFIG'      } = $args->{'config'} || ($base->log->error("Config is empty. Insert it with 'config' param!") and return);
-	$self->{'error_path'    } = $args->{'error_path'};
-	$self->{'after_callback'} = $args->{'after_callback'} || sub {$_[1]->redirect_to('/')};
+	$self->conf($args->{'config'});
+	$self->error_path($args->{'error_path'});
+	$self->after_callback($args->{'after_callback'}) if $args->{'after_callback'};
 	
-	$base->renderer->add_helper('oauth_url',       sub { $_[1] ? OAUTH_SESSION_URL.$_[1].'/' : '/' });
-	$base->renderer->add_helper('oauth_providers', sub { keys %{ $self->{'__CONFIG'} || {} } });
+	$base->renderer->add_helper('oauth_url',       sub { $_[1] ? $self->oauth_session_url.$_[1].'/' : '/' });
+	$base->renderer->add_helper('oauth_providers', sub { keys %{ $self->conf } });
 	
 	for ($base->routes) {
-		$_->route(OAUTH_SESSION_URL.":oauth_provider", oauth_provider => qr/[\w\-]+/)
+		$_->route($self->oauth_session_url.":oauth_provider", oauth_provider => qr/[\w\-]+/)
 			->to(cb => sub {
 				my $ctrl = shift;
 				my $res = eval { $self->oauth_session($ctrl) };
 				return $@ ? $self->_oauth_error($ctrl, $@) : $res;
 			});
 		
-		$_->route("/oauth/:oauth_provider", oauth_provider => qr/[\w\-]+/)
+		$_->route($self->callback_url.":oauth_provider", oauth_provider => qr/[\w\-]+/)
 			->to(cb => sub {
 				my $ctrl = shift;
 				my $res = eval { $self->oauth_callback($ctrl) };
@@ -39,20 +48,11 @@ sub register {
 	}
 }
 
-sub config {
-	(shift->{'__CONFIG'} || {})->{+shift} || {};
-}
-
-sub after_callback {
-	my $self = shift;
-	$self->{'after_callback'}->($self, @_);
-}
-
 sub oauth_session {
 	my ($self, $ctrl) = @_;
 	
-	my $conf = $self->config( my $oauth_provider = $ctrl->param('oauth_provider') );
 	DEBUG && $self->_debug($ctrl, "start oauth session");
+	my $conf = $self->conf->{ my $oauth_provider = $ctrl->param('oauth_provider') };
 	return $self->_oauth_error($ctrl, "Can`t get config!") unless %$conf;
 	
 	my $www_oauth = Net::OAuth::All->new(%$conf);
@@ -80,8 +80,8 @@ sub oauth_session {
 sub oauth_callback {
 	my ($self, $ctrl) = @_;
 	
-	my $conf = $self->config( my $oauth_provider = $ctrl->param('oauth_provider') );
 	DEBUG && $self->_debug($ctrl, "start oauth callback");
+	my $conf = $self->conf->{ my $oauth_provider = $ctrl->param('oauth_provider') };
 	return $self->_oauth_error($ctrl, "Can`t get config!") unless %$conf;
 	
 	my $oauth_session = $ctrl->session('oauth') || {};
@@ -112,7 +112,7 @@ sub oauth_callback {
 			
 			my $data = $self->oauth_request($ctrl, $www_oauth->request('protected_resource'));
 			DEBUG && $self->_debug($ctrl, "oauth after callback");
-			return $self->after_callback($ctrl, $data->json || {}) if $data;
+			return $self->after_callback->($self, $ctrl, $data->json || {}) if $data;
 			return $self->_oauth_error($ctrl, "Can`t get protected_resource!!!");
 		}
 	}
@@ -140,7 +140,7 @@ sub _oauth_error {
 	$ctrl->session('oauth' => {});
 	
 	$ctrl->app->log->error("'".$ctrl->param('oauth_provider')."' PROVIDER ERROR: $error");
-	return $ctrl->redirect_to($self->{'error_path'} || '/');
+	return $ctrl->redirect_to($self->error_path || '/');
 }
 
 sub _debug {
