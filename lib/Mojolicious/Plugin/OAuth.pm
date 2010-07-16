@@ -14,107 +14,146 @@ use constant DEBUG => $ENV{'OAUTH_DEBUG'} || 0;
 
 __PACKAGE__->attr('conf',              sub { {} });
 __PACKAGE__->attr('error_path',        sub { '' });
-__PACKAGE__->attr('callback_url',      sub { '/oauth/'         });
-__PACKAGE__->attr('oauth_session_url', sub { '/oauth_session/' });
+__PACKAGE__->attr('default_callback_url', sub { '/oauth/'         });
+__PACKAGE__->attr('default_session_url',  sub { '/oauth_session/' });
 __PACKAGE__->attr('after_callback',    sub { sub {$_[1]->redirect_to('/')} });
 
 sub register {
 	my ($self, $base, $args)  = @_;
 	
 	$base->log->error("Config is empty. Insert it with 'config' param!") and return unless $args->{'config'};
-	DEBUG && $base->log->debug("OAUTH SESSION URL is ".$self->oauth_session_url.":oauth_provider/");
 	
-	$self->conf($args->{'config'});
+	$self->conf(my $conf = $args->{'config'});
 	$self->error_path($args->{'error_path'});
 	$self->after_callback($args->{'after_callback'}) if $args->{'after_callback'};
 	
-	$base->renderer->add_helper('oauth_url',       sub { $_[1] ? $self->oauth_session_url.$_[1].'/' : '/' });
+	$base->renderer->add_helper('oauth_url',       sub { $_[1] ? $self->session_url($_[1]) : '/' });
 	$base->renderer->add_helper('oauth_providers', sub { keys %{ $self->conf } });
 	
-	for ($base->routes) {
-		$_->route($self->oauth_session_url.":oauth_provider", oauth_provider => qr/[\w\-]+/)
-			->to(cb => sub {
-				my $ctrl = shift;
-				my $res = eval { $self->oauth_session($ctrl) };
-				return $@ ? $self->_oauth_error($ctrl, $@) : $res;
-			});
+	for my $r ($base->routes) {
+		my $default_sessions  = [];
+		my $default_callbacks = [];
 		
-		$_->route($self->callback_url.":oauth_provider", oauth_provider => qr/[\w\-]+/)
-			->to(cb => sub {
-				my $ctrl = shift;
-				my $res = eval { $self->oauth_callback($ctrl) };
-				return $@ ? $self->_oauth_error($ctrl, $@) : $res;
-			});
+		foreach (keys %$conf) {
+			if ($conf->{$_}->{'session_url'}) {
+				$r->route( $conf->{$_}->{'session_url'} )
+					->to(oauth_provider => $_, cb => sub {
+						my $c = shift;
+						my $res = eval { $self->oauth_session($c) };
+						return $@ ? $self->_oauth_error($c, $@) : $res;
+					});
+				DEBUG && $base->log->debug("OAUTH DEBUG: created session route '$conf->{$_}->{'session_url'}' from config");
+			} else {
+				DEBUG && $base->log->debug("OAUTH DEBUG: created default session route '".$self->default_session_url."$_/'");
+				
+				push @$default_sessions, $_;
+			}
+			
+			if ($conf->{$_}->{'callback'} || $conf->{$_}->{'redirect_uri'}) {
+				$r->route( Mojo::URL->new($conf->{$_}->{'callback'} || $conf->{$_}->{'redirect_uri'})->path )
+					->to(oauth_provider => $_, cb => sub {
+						my $c = shift;
+						my $res = eval { $self->oauth_callback($c) };
+						return $@ ? $self->_oauth_error($c, $@) : $res;
+					});
+				DEBUG && $base->log->debug("OAUTH DEBUG: created callback route '".($conf->{$_}->{'callback'} || $conf->{$_}->{'redirect_uri'})."' from config");
+			} else {
+				DEBUG && $base->log->debug("OAUTH DEBUG: created default callback route '".$self->default_callback_url."$_/'");
+				
+				push @$default_callbacks, $_;
+			}
+		}
+		
+		if (@$default_sessions) {
+			my $t = join '|', @$default_sessions;
+			$r->route($self->default_session_url.":oauth_provider", oauth_provider => qr/$t/)
+				->to(cb => sub {
+					my $c = shift;
+					my $res = eval { $self->oauth_session($c) };
+					return $@ ? $self->_oauth_error($c, $@) : $res;
+				});
+		}
+		
+		
+		if (@$default_callbacks) {
+			my $t = join '|', @$default_callbacks;
+			$r->route($self->default_callback_url.":oauth_provider", oauth_provider => qr/$t/)
+				->to(cb => sub {
+					my $c = shift;
+					my $res = eval { $self->oauth_callback($c) };
+					return $@ ? $self->_oauth_error($c, $@) : $res;
+				});
+		}
 	}
 }
 
 sub oauth_session {
-	my ($self, $ctrl) = @_;
+	my ($self, $c) = @_;
 	
-	DEBUG && $self->_debug($ctrl, "start oauth session");
+	DEBUG && $self->_debug($c, "start oauth session");
 	
-	my $conf = $self->conf->{ my $oauth_provider = $ctrl->param('oauth_provider') };
-	return $self->_oauth_error($ctrl, "Can`t get config!") unless %$conf;
+	my $conf = $self->conf->{ my $oauth_provider = $c->param('oauth_provider') };
+	return $self->_oauth_error($c, "Can`t get config!") unless %$conf;
 	
-	if ($ctrl->req->headers->referrer) {
-		my $ref = Mojo::URL->new($ctrl->req->headers->referrer || '');
-		if ($ref->host eq $ctrl->req->url->base->host) {
-			DEBUG && $self->_debug($ctrl, "save login referrer ".$ref->to_string);
-			$ctrl->session('login_referrer' => $ref->to_string);
+	if ($c->req->headers->referrer) {
+		my $ref = Mojo::URL->new($c->req->headers->referrer || '');
+		if ($ref->host eq $c->req->url->base->host) {
+			DEBUG && $self->_debug($c, "save login referrer ".$ref->to_string);
+			$c->session('login_referrer' => $ref->to_string);
 		} else {
-			delete $ctrl->session->{'login_referrer'};
+			delete $c->session->{'login_referrer'};
 		}
 	} else {
-		delete $ctrl->session->{'login_referrer'};
+		delete $c->session->{'login_referrer'};
 	}
 	
 	my $www_oauth = Net::OAuth::All->new(%$conf);
 	
 	if ($www_oauth->{'module_version'} eq '2_0') {
-		return $ctrl->redirect_to($www_oauth->request('authorization')->to_url);
-	} elsif (my $res = $self->oauth_request($ctrl, $www_oauth->request('request_token'))) {
+		return $c->redirect_to($www_oauth->request('authorization')->to_url);
+	} elsif (my $res = $self->oauth_request($c, $www_oauth->request('request_token'))) {
 		$www_oauth->response->from_post_body($res->body);
 		if (defined $www_oauth->token) {
-			DEBUG && $self->_debug($ctrl, "request_token ".$www_oauth->token);
-			DEBUG && $self->_debug($ctrl, "request_token_secret ".$www_oauth->token_secret);
+			DEBUG && $self->_debug($c, "request_token ".$www_oauth->token);
+			DEBUG && $self->_debug($c, "request_token_secret ".$www_oauth->token_secret);
 			
-			$ctrl->session('oauth' => {
-				%{ $ctrl->session('oauth') || {} },
+			$c->session('oauth' => {
+				%{ $c->session('oauth') || {} },
 				'request_token'        => $www_oauth->token,
 				'request_token_secret' => $www_oauth->token_secret,
 			});
 			
-			return $ctrl->redirect_to($www_oauth->request('authorization')->to_url);
+			return $c->redirect_to($www_oauth->request('authorization')->to_url);
 		}
 	}
-	return $self->_oauth_error($ctrl, "Can`t get request token!!!");
+	return $self->_oauth_error($c, "Can`t get request token!!!");
 }
 
 sub oauth_callback {
-	my ($self, $ctrl) = @_;
+	my ($self, $c) = @_;
 	
-	DEBUG && $self->_debug($ctrl, "start oauth callback");
-	my $conf = $self->conf->{ my $oauth_provider = $ctrl->param('oauth_provider') };
-	return $self->_oauth_error($ctrl, "Can`t get config!") unless %$conf;
+	DEBUG && $self->_debug($c, "start oauth callback");
+	my $conf = $self->conf->{ my $oauth_provider = $c->param('oauth_provider') };
+	return $self->_oauth_error($c, "Can`t get config!") unless %$conf;
 	
-	my $oauth_session = $ctrl->session('oauth') || {};
+	my $oauth_session = $c->session('oauth') || {};
 	my $www_oauth = Net::OAuth::All->new(
 		%$conf,
 		(
-			'code'         => $ctrl->param('code') || '',
+			'code'         => $c->param('code') || '',
 			'token'        => $oauth_session->{'request_token'} || '',
 			'token_secret' => $oauth_session->{'request_token_secret'} || '',
-			'verifier'     => $ctrl->param('oauth_verifier') || '',
+			'verifier'     => $c->param('oauth_verifier') || '',
 		)
 	);
 	
-	if (my $res = $self->oauth_request($ctrl, $www_oauth->request('access_token'))) {
+	if (my $res = $self->oauth_request($c, $www_oauth->request('access_token'))) {
 		$www_oauth->response->from_post_body($res->body);
 		if ($www_oauth->token) {
-			DEBUG && $self->_debug($ctrl, "access_token ".$www_oauth->token);
-			DEBUG && $self->_debug($ctrl, "access_token_secret ".$www_oauth->token_secret);
+			DEBUG && $self->_debug($c, "access_token ".$www_oauth->token);
+			DEBUG && $self->_debug($c, "access_token_secret ".$www_oauth->token_secret);
 			
-			$ctrl->session('oauth' => {
+			$c->session('oauth' => {
 				%$oauth_session,
 				'token_created'        => time,
 				'access_token'         => $www_oauth->token,
@@ -123,42 +162,48 @@ sub oauth_callback {
 				'access_token_secret'  => $www_oauth->token_secret,
 			});
 			
-			my $data = $self->oauth_request($ctrl, $www_oauth->request('protected_resource'));
-			DEBUG && $self->_debug($ctrl, "oauth after callback");
-			return $self->after_callback->($self, $ctrl, $data->json || {}) if $data;
-			return $self->_oauth_error($ctrl, "Can`t get protected_resource!!!");
+			my $data = $self->oauth_request($c, $www_oauth->request('protected_resource'));
+			DEBUG && $self->_debug($c, "oauth after callback");
+			return $self->after_callback->($self, $c, $data->json || {}) if $data;
+			return $self->_oauth_error($c, "Can`t get protected_resource!!!");
 		}
 	}
 	
-	return $self->_oauth_error($ctrl, "Can`t get access_token!!!");
+	return $self->_oauth_error($c, "Can`t get access_token!!!");
 }
 
 sub oauth_request {
-	my ($self, $ctrl, $request) = @_;
+	my ($self, $c, $request) = @_;
 	return unless $request;
 	
 	my $response = undef;
-	my $client   = $ctrl->client;
+	my $client   = $c->client;
 	if ($request->{'request_method'} eq 'GET') {
 		$response = $client->get($request->to_url);
 	} else {
 		#~ $response = $client->post($request->to_url);
 	}
 	
-	return $response->success || ($ctrl->app->log->error('Error oauth_request ' . join(' : ', $request->to_url, $response->error, Dumper $request)) and undef);
+	return $response->success || ($c->app->log->error('Error oauth_request ' . join(' : ', $request->to_url, $response->error, Dumper $request)) and undef);
 }
 
 sub _oauth_error {
-	my ($self, $ctrl, $error) = @_;
-	$ctrl->session('oauth' => {});
+	my ($self, $c, $error) = @_;
+	$c->session('oauth' => {});
 	
-	$ctrl->app->log->error("'".$ctrl->param('oauth_provider')."' PROVIDER ERROR: $error");
-	return $ctrl->redirect_to($self->error_path || '/');
+	$c->app->log->error("'".$c->param('oauth_provider')."' PROVIDER ERROR: $error");
+	return $c->redirect_to($self->error_path || '/');
+}
+
+sub session_url {
+	my ($self, $provider) = @_;
+	warn $provider;
+	$self->conf->{$provider}->{'session_url'} || $self->default_session_url.$provider.'/';
 }
 
 sub _debug {
-	my ($self, $ctrl, $error) = @_;
-	$ctrl->app->log->debug("'".$ctrl->param('oauth_provider')."' PROVIDER DEBUG: $error");
+	my ($self, $c, $error) = @_;
+	$c->app->log->debug("'".$c->param('oauth_provider')."' PROVIDER OAUTH DEBUG: $error");
 }
 
 1;

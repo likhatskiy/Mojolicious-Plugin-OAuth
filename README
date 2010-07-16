@@ -50,7 +50,8 @@ HELPERS
 	
 ROUTES
 	
-	Plugin creates some routes by default. Route '/oauth_session/:oauth_provider/' is for initialization OAUTH session, where 'oauth_provider' is key of -config HASH. It`s link on your web project for authorization.
+	Plugin creates some routes by default.
+	Route '/oauth_session/:oauth_provider/' is for initialization OAUTH session, where 'oauth_provider' is key of -config HASH. It`s link on your web project for authorization. You can redefine this route by adding 'session_url' param to provider configuration.
 	Route '/oauth/:oauth_provider/' is a callback URL which was installed at OAUTH provider, where 'oauth_provider' is key of -config HASH. You can redefine callback URL of OAUTH provider by setting 'callback' param of provider configuration. But not all providers support this param.
 
 SEE ALSO
