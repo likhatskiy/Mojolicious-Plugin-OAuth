@@ -19,12 +19,14 @@ SYNOPSIS
 	$self->plugin('o_auth', {
 		'config' => $config,
 	});
+	# ...
 	
 	# Mojolicious::Lite
 	plugin 'o_auth', {
 		'config' => $config,
 	};
 	
+	get '/login/'
 	
 DESCRIPTION
 
@@ -35,25 +37,48 @@ PLUGIN CONFIGURE
 	- config 
 		Is required HASH param. May consists of many provider configuration. For provider configuration see Net::OAuth::All.
 	
-	- error_path
-		Is optional param. Redirects to error_path on error. Default value is '/'.
-	
-	- after_callback
-		Is optional param. Is a callback, which will be called, where authorization is successful. Callback receives three params: $plugin, $controller, $protected_data. UNDEF after_callback redirects to '/' by default.
-
 HELPERS
-	- oauth_url('provider')
-		Generate url for authorization via oauth profider, where 'provider' is key of -config HASH.
+	All received data saves to session in 'oauth' param. Helper return undef on error.
 	
-	- oauth_providers
-		Returns available providers from keys of -config HASH param.
-	
-ROUTES
-	
-	Plugin creates some routes by default.
-	Route '/oauth_session/:oauth_provider/' is for initialization OAUTH session, where 'oauth_provider' is key of -config HASH. It`s link on your web project for authorization. You can redefine this route by adding 'session_url' param to provider configuration.
-	Route '/oauth/:oauth_provider/' is a callback URL which was installed at OAUTH provider, where 'oauth_provider' is key of -config HASH. You can redefine callback URL of OAUTH provider by setting 'callback' param of provider configuration. But not all providers support this param.
+	- oauth_login($provider)
+		Make redirect_to to authorization url and obtain request_token and request_token_secret (only for OAuth less then 2.0) for provider $provider (is a key of -config param).
+		$provider param saves to 'oauth_provider' of session('oauth') before execute.
+		
+	- oauth_callback
+		Make oauth callback and obtain tokens for 'oauth_provider' saved on oauth_login step. All received data saves to session in 'oauth' param.
+		
+	- oauth_request
+		You can make protected request to provider API
 
+OAUTH REQUEST
+	Usage:
+		helper('oauth_request'
+			=> provider
+			=> request method
+			=> URL
+			=> core config
+			=> extra request params
+			=> custom request config
+		);
+	
+	- provider
+		Is a key of - config param.
+	
+	- request method
+		Method for request.
+	
+	- URL
+		Url to provider API.
+	
+	- core config
+		Is a HASH reference with configuration params for temporary change of plugin core config. It`t may be access_token and access_token_secret(check examples).
+	
+	- extra request params
+		Is a HASH reference with params of API (for example, 'status' for twitter).
+	
+	- custom request config
+		Is a HASH reference. You can add or change headers ('headers' key, is a HASH reference) and put POST body - 'body' key, is a string (POST body generates from extra params by default). With 'body' param URL generates with extra params.
+	
 SEE ALSO
 	http://oauth.net
 	
