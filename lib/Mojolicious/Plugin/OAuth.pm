@@ -24,11 +24,12 @@ __PACKAGE__->attr('client' => sub {
 __PACKAGE__->attr('conf', sub { +{} });
 
 sub register {
-	my ($self, $app, $args)  = @_;
+	my ($self, $app, $conf)  = @_;
 	
-	$app->log->error("Config is empty. Insert it with 'config' param!") and return unless $args->{'config'};
+	$app->log->error("Config should be a HASH ref!") and return unless ref $conf eq 'HASH';
+	$app->log->error("Config is empty!") and return unless %$conf;
 	
-	$self->conf(my $conf = $args->{'config'});
+	$self->conf($conf);
 	
 	$app->renderer
 		->add_helper('oauth_login',   sub {
@@ -86,6 +87,8 @@ sub oauth_callback {
 	my ($self, $c) = @_;
 	
 	my $oauth_session = $c->session('oauth') || {};
+	return $self->_error($c, "OAuth session is empty") unless %$oauth_session;
+	
 	$c->stash('oauth_provider' => $oauth_session->{'oauth_provider'});
 	
 	DEBUG && $self->_debug($c, "start oauth callback");

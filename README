@@ -5,6 +5,10 @@ NAME
 	Uses Net::OAuth::All.
 
 SYNOPSIS
+	#!/usr/bin/env perl
+	
+	use Mojolicious::Lite;
+	use Data::Dumper;
 	
 	my $config = {
 		provider1 => {
@@ -16,32 +20,108 @@ SYNOPSIS
 	};
 	
 	# Mojolicious
-	$self->plugin('o_auth', {
-		'config' => $config,
-	});
+	$self->plugin('o_auth' => $config);
 	# ...
 	
 	# Mojolicious::Lite
-	plugin 'o_auth', {
-		'config' => $config,
+	$ENV{'OAUTH_DEBUG'} = 1;
+	plugin 'o_auth' => $config;
+	
+	
+	get '/'                => 'index';
+	get '/oauth_error'     => 'oauth_error';
+
+	get '/login/:provider' => sub {
+		my $self = shift;
+		
+		return $self->redirect_to('/oauth_error/') unless $self->helper('oauth_login' => $self->stash('provider'));
+		return;
 	};
 	
-	get '/login/'
+	get '/oauth/:provider' => sub {
+		my $self = shift;
+		
+		return $self->redirect_to('/oauth_error/') unless $self->helper('oauth_callback');
+		
+		my $oauth = $self->session('oauth');
+		my $res = $self->helper('oauth_request'
+			=> $oauth->{'oauth_provider'}
+			=> {
+				map {$_ => $oauth->{$_}} qw/access_token access_token_secret/
+			}
+		);
+		
+		$self->render(
+			'data' => Dumper($res ? $res->json : {})
+		);
+	} => 'oauth';
+	
+	get '/push' => sub {
+		my $self = shift;
+		
+		my $oauth = $self->session('oauth');
+		my $res = $self->helper('oauth_request'
+			=> 'buzz'
+			=> 'POST'
+			=> 'https://www.googleapis.com/buzz/v1/activities/@me/@self'
+			=> {
+				map {$_ => $oauth->{$_}} qw/access_token access_token_secret/
+			}
+			=> {
+				alt => 'json',
+			}
+			=> {
+				'body'    => q({"data": {"object": {"type": "note", "content": "I`m in Google BUZZ"}}}),
+				'headers' => {
+					'Content-Type' => 'application/json',
+				},
+			}
+		);
+		
+		$self->render(
+			'data' => Dumper($res ? $res->json : {})
+		);
+	} => 'oauth';
+
+	app->start;
+	
+	__DATA__
+	
+	@@ index.html.ep
+	% layout 'funky';
+		<% for (keys %{$self->app->conf}) { %>
+			<a href="/login/<%= $_ %>/"><%= $_ %></a><br/>
+		<% } %>
+
+	@@ oauth.html.ep
+	% layout 'funky';
+		<%= $data %>
+		
+	@@ oauth_error.html.ep
+	% layout 'funky';
+	Can`t login
+
+	@@ layouts/funky.html.ep
+	<!doctype html><html>
+		<head><title>OAuth TEST!</title></head>
+		<body><%== content %></body>
+	</html>
+
 	
 DESCRIPTION
 
 	Mojolicious::Plugin::OAuth is a plugin to easily enable OAuth authorization.
 
 PLUGIN CONFIGURE
+	plugin 'o_auth' => $config;
 	
-	- config 
-		Is required HASH param. May consists of many provider configuration. For provider configuration see Net::OAuth::All.
+	$config is required HASH reference. May consists of many provider configuration. For provider configuration see Net::OAuth::All.
 	
 HELPERS
 	All received data saves to session in 'oauth' param. Helper return undef on error.
 	
 	- oauth_login($provider)
-		Make redirect_to to authorization url and obtain request_token and request_token_secret (only for OAuth less then 2.0) for provider $provider (is a key of -config param).
+		Make redirect_to to authorization url and obtain request_token and request_token_secret (only for OAuth less then 2.0) for provider $provider (is a key of $config).
 		$provider param saves to 'oauth_provider' of session('oauth') before execute.
 		
 	- oauth_callback
@@ -62,10 +142,10 @@ OAUTH REQUEST
 		);
 	
 	- provider
-		Is a key of - config param.
+		Is a key of $config.
 	
 	- request method
-		Method for request.
+		HTTP Method for request.
 	
 	- URL
 		Url to provider API.

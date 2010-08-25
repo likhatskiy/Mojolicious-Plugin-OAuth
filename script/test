@@ -1,40 +1,63 @@
 #!/usr/bin/env perl
 
-use lib qw(lib /home/webmaster/plib);
+use lib qw(lib /home/webmaster/git/perl/Net-OAuth-All/lib);
 use Mojolicious::Lite;
 use Data::Dumper;
 
-plugin 'o_auth', {
-	'config'         => do 'script/app.conf',
-	'error_path'     => '/oauth_error/',
-	'after_callback' => sub {
-		my ($plugin, $ctrl, $data) = @_;
-		
-		warn Dumper $data;
-		$ctrl->redirect_to($ctrl->session('login_referrer') || '');
-	},
+get '/'                => 'index';
+get '/oauth_error'     => 'oauth_error';
+
+get '/login/:provider' => sub {
+	my $self = shift;
+	
+	return $self->redirect_to('/oauth_error/') unless $self->helper('oauth_login' => $self->stash('provider'));
+	return;
 };
+get '/oauth/:provider' => sub {
+	my $self = shift;
+	
+	return $self->redirect_to('/oauth_error/') unless $self->helper('oauth_callback');
+	
+	my $oauth = $self->session('oauth');
+	my $res = $self->helper('oauth_request'
+		=> $oauth->{'oauth_provider'}
+		=> {
+			map {$_ => $oauth->{$_}} qw/access_token access_token_secret/
+		}
+	);
+	
+	$self->render(
+		'data' => Dumper($res ? $res->json : {})
+	);
+} => 'oauth';
 
-get '/' => 'index';
-get '/oauth_error' => 'oauth_error';
-
-app->start;
+for (ref(app)) {
+	$_->attr('conf' => sub { do 'script/app.conf' });
+	
+	$ENV{'OAUTH_DEBUG'} = 1;
+	plugin 'o_auth', $_->conf;
+	
+	$_->start;
+}
 
 __DATA__
 
 @@ index.html.ep
 % layout 'funky';
+	<% for (keys %{$self->app->conf}) { %>
+		<a href="/login/<%= $_ %>/"><%= $_ %></a><br/>
+	<% } %>
 
-<% for (oauth_providers) { %>
-	<a href="<%= oauth_url $_ %>"><%= ucfirst $_ %></a><br/>
-<% } %>
-
+@@ oauth.html.ep
+% layout 'funky';
+	<%= $data %>
+	
 @@ oauth_error.html.ep
 % layout 'funky';
 Can`t login
 
 @@ layouts/funky.html.ep
 <!doctype html><html>
-    <head><title>Funky!</title></head>
+    <head><title>OAuth TEST!</title></head>
     <body><%== content %></body>
 </html>
